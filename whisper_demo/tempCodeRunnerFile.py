@@ -1,0 +1,1 @@
+AudioSegment.from_mp3(audio_file)
