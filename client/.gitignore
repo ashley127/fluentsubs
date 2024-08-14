@@ -1,9 +1,4 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
-
-
-#ignore virtual environment
-myenv/
-
 # dependencies
 /node_modules
 /.pnp
