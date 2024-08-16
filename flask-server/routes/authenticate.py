@@ -11,10 +11,12 @@ load_dotenv()
 
 auth_bp = Blueprint('auth', __name__)
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file",
+SCOPES = ["https://www.googleapis.com/auth/drive",
           "https://www.googleapis.com/auth/userinfo.profile",
           "https://www.googleapis.com/auth/userinfo.email",
           "openid"]
+
+# Use HTTP in development for debugging, HTTPS otherwise
 REDIRECT_URI = os.getenv('REDIRECT_URI', "http://127.0.0.1:5000/oauth2callback")
 
 # Load credentials from the JSON file
@@ -29,12 +31,15 @@ flow = Flow.from_client_config(
     redirect_uri=REDIRECT_URI
 )
 
+# Enable insecure OAuth for debugging purposes
+if REDIRECT_URI.startswith("http://"):
+    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+
 @auth_bp.route("/login")
 def login():
     authorization_url, state = flow.authorization_url(access_type='offline')
     session["state"] = state
     return redirect(authorization_url)
-
 @auth_bp.route("/oauth2callback")
 def oauth2callback():
     try:
@@ -62,14 +67,26 @@ def oauth2callback():
         if not id_info:
             return "ID token verification failed.", 500
 
+        # Store user information in session
         session["google_id"] = id_info.get("sub")
         session["google_name"] = id_info.get("name")
         session["google_email"] = id_info.get("email")
+
+        # Store credentials in session
+        session['credentials'] = {
+            'token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_uri': credentials.token_uri,
+            'client_id': credentials.client_id,
+            'client_secret': credentials.client_secret,
+            'scopes': credentials.scopes
+        }
 
         return redirect(url_for("home"))
     except Exception as e:
         # Log the exception details
         return f"An error occurred during the callback: {e}", 500
+
 
 
 @auth_bp.route("/logout")
