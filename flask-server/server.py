@@ -1,4 +1,4 @@
-from flask import Flask, session, url_for, redirect, render_template_string
+from flask import Flask, session, url_for, redirect, render_template_string, request
 import os
 from dotenv import load_dotenv
 
@@ -30,6 +30,7 @@ def home():
         # If authenticated, show a button to scan files
         folder_name = session.get('folder_name', 'No folder scanned yet')
         files = session.get('files', [])
+        transcriptions = session.get('transcriptions', {})
 
         # Define a simple HTML template directly in the route
         html_content = f'''
@@ -40,10 +41,34 @@ def home():
             <h2>Scanned Folder</h2>
             <p>Folder Name: {folder_name}</p>
             <ul>
-                {''.join(f'<li>{file["name"]} (ID: {file["id"]}, Type: {file["mimeType"]})</li>' for file in files)}
+                {''.join(f'''
+                    <li>
+                        {file["name"]} (ID: {file["id"]}, Type: {file["mimeType"]})
+                        <p>
+                            <a href="/download-file/{file["id"]}"><button>Download</button></a>
+                            <form action="/transcribe-file/{file["id"]}" method="post" style="display:inline;" onsubmit="showSpinner(this);">
+                                <button type="submit">Transcribe</button>
+                                <span class="spinner" style="display:none;">⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏</span>
+                            </form>
+                        </p>
+                        <p>{transcriptions.get(file["id"], "No transcription available")}</p>
+                    </li>''' for file in files)}
             </ul>
 
             <p><a href="/download-all"><button>Download All Files</button></a></p>
+
+            <script>
+                function showSpinner(form) {{
+                    const spinner = form.querySelector('.spinner');
+                    spinner.style.display = 'inline';
+                    let frame = 0;
+                    const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+                    setInterval(() => {{
+                        spinner.textContent = frames[frame % frames.length];
+                        frame++;
+                    }}, 100);
+                }}
+            </script>
         '''
 
         return render_template_string(html_content)

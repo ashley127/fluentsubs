@@ -1,9 +1,10 @@
-from flask import Blueprint, request, jsonify
-from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from flask import Blueprint, request, jsonify, session
 import torch
 import soundfile as sf
-from pydub import AudioSegment
-import io
+from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+
+# Set up the blueprint
+transcribe_bp = Blueprint('transcribe', __name__)
 
 # Set device to MPS if available (for M1 chip)
 device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -29,31 +30,25 @@ pipe = pipeline(
     device=device,
 )
 
-transcribe_bp = Blueprint('transcribe', __name__)
-
-@transcribe_bp.route('/transcribe', methods=['POST'])
-def transcribe():
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-
-    file = request.files['file']
-    if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-
+@transcribe_bp.route('/transcribe-file/<file_id>', methods=['POST'])
+def transcribe_file(file_id):
     try:
-        # Load the MP3 file and convert it to a WAV format
-        audio = AudioSegment.from_file(file, format="mp3")
-        wav_file = io.BytesIO()
-        audio.export(wav_file, format="wav")
-
-        # Load the WAV file using soundfile
-        wav_file.seek(0)
-        waveform, sample_rate = sf.read(wav_file)
+        # Assuming the file has already been downloaded locally for processing
+        file_path = f'/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads/{file_id}.mp3'
+        
+        # Load the audio file
+        waveform, sample_rate = sf.read(file_path)
 
         # Process the audio with the pipeline
         result = pipe({"array": waveform, "sampling_rate": sample_rate})
 
-        return jsonify({'transcription': result["text"]})
+        # Store the transcription in the session or return it directly
+        transcription_text = result["text"]
+        transcriptions = session.get('transcriptions', {})
+        transcriptions[file_id] = transcription_text
+        session['transcriptions'] = transcriptions
+
+        return jsonify({"transcription": transcription_text})
 
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({"error": str(e)}), 500

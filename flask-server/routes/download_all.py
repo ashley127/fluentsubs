@@ -3,7 +3,6 @@ from googleapiclient.discovery import build
 from io import BytesIO
 from google.oauth2.credentials import Credentials
 import logging
-import zipfile
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
@@ -29,10 +28,9 @@ def download_all():
                 request = drive_service.files().get_media(fileId=file['id'])
                 file_content = request.execute()
 
-                # Add the prefix "fluent-subs" to the original filename
-                original_filename = file['name']
-                tagged_filename = f"fluent-subs-{original_filename}"
-                zip_file.writestr(tagged_filename, file_content)
+                # Use file ID for naming
+                file_id = file['id']
+                zip_file.writestr(file_id, file_content)
             except Exception as e:
                 logging.error(f"Failed to download file {file['name']}: {e}")
 
@@ -45,3 +43,25 @@ def download_all():
             'Content-Disposition': 'attachment;filename=fluent-subs-files.zip'
         }
     )
+
+@download_all_bp.route('/download-file/<file_id>')
+def download_file(file_id):
+    if 'credentials' not in session:
+        return redirect(url_for('auth.login'))
+
+    credentials = Credentials(**session['credentials'])
+    drive_service = build('drive', 'v3', credentials=credentials)
+
+    try:
+        request = drive_service.files().get_media(fileId=file_id)
+        file_content = request.execute()
+
+        return Response(
+            file_content,
+            mimetype='application/octet-stream',
+            headers={
+                'Content-Disposition': f'attachment;filename="{file_id}.mp3"'
+            }
+        )
+    except Exception as e:
+        return f"Failed to download file: {e}", 500
