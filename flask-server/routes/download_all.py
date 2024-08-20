@@ -1,6 +1,5 @@
 from flask import Blueprint, session, Response, redirect, url_for
 from googleapiclient.discovery import build
-from io import BytesIO
 from google.oauth2.credentials import Credentials
 import logging
 
@@ -28,9 +27,9 @@ def download_all():
                 request = drive_service.files().get_media(fileId=file['id'])
                 file_content = request.execute()
 
-                # Use file ID for naming
+                # Use file_id with the original file extension for naming
                 file_id = file['id']
-                zip_file.writestr(file_id, file_content)
+                zip_file.writestr(f"{file_id}", file_content)
             except Exception as e:
                 logging.error(f"Failed to download file {file['name']}: {e}")
 
@@ -53,14 +52,22 @@ def download_file(file_id):
     drive_service = build('drive', 'v3', credentials=credentials)
 
     try:
+        files = session.get('files', [])
+        file_info = next((file for file in files if file['id'] == file_id), None)
+        if not file_info:
+            return f"File not found in session.", 404
+
         request = drive_service.files().get_media(fileId=file_id)
         file_content = request.execute()
+
+        # Preserve the original file extension
+        file_ext = file_info['name'].split(".")[1]
 
         return Response(
             file_content,
             mimetype='application/octet-stream',
             headers={
-                'Content-Disposition': f'attachment;filename="{file_id}.mp3"'
+                'Content-Disposition': f'attachment;filename="{file_id}.{file_ext}"'
             }
         )
     except Exception as e:

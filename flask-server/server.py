@@ -23,6 +23,9 @@ app.register_blueprint(download_all_bp)
 from routes.transcribe import transcribe_bp
 app.register_blueprint(transcribe_bp)
 
+from routes.subtitle import subtitle_bp
+app.register_blueprint(subtitle_bp)
+
 @app.route('/')
 def home():
     # Check if the user is authenticated
