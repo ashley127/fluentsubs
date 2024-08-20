@@ -2,6 +2,8 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MotionValue, motion, useScroll, useTransform } from "framer-motion";
 import { cn } from "../utils.ts";
+import Button from "@mui/material/Button";
+
 import {
   IconBrightnessDown,
   IconBrightnessUp,
@@ -115,6 +117,7 @@ export const MacbookScroll = ({
         {badge && <div className="absolute bottom-4 left-4">{badge}</div>}
       </div>
     </div>
+    
   );
 };
 
@@ -139,7 +142,7 @@ export const Lid = ({
           transformOrigin: "bottom",
           transformStyle: "preserve-3d",
         }}
-        className="h-[12rem] w-[32rem] bg-[#010101] rounded-2xl p-2 relative"
+        className="h-[12rem] w-[32rem] bg-[#010101] rounded-2xl  relative"
       >
         <div
           style={{
@@ -161,9 +164,15 @@ export const Lid = ({
           transformStyle: "preserve-3d",
           transformOrigin: "top",
         }}
-        className="h-96 w-[32rem] absolute inset-0 bg-[#010101] rounded-2xl p-2"
+        className="h-96 w-[32rem] absolute inset-0 bg-[#010101] rounded-2xl"
       >
         <div className="absolute inset-0 bg-[#272729] rounded-lg" />
+        <img
+          src={src as string}
+          alt="aceternity logo"
+          className="object-contain absolute rounded-lg inset-0 h-full w-full p-0"
+          style={{ objectFit: 'cover',position: 'absolute',inset: 0, height: '100%', width: '100%' }}
+        />
         
       </motion.div>
     </div>
