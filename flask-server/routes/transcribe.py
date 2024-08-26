@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session, Response
+from flask import Blueprint, request, jsonify, session
 import torch
 import os
 import subprocess
@@ -27,35 +27,44 @@ pipe = pipeline(
     model=model,
     tokenizer=processor.tokenizer,
     feature_extractor=processor.feature_extractor,
+    chunk_length_s=15,
     return_timestamps=True,
     torch_dtype=torch_dtype,
     device=device,
 )
 
-def format_time(seconds):
-    """Convert seconds to the SRT timestamp format."""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    seconds = int(seconds % 60)
-    milliseconds = int((seconds - int(seconds)) * 1000)
-    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
-
 def generate_srt(chunks):
-    print("starting to generate")
     """Generate SRT content from segments."""
     srt_content = ""
-    for i, chunk in enumerate(chunks):
-        print(chunk)
-        
-        start_time = format_time(chunk['start_time'])
-        end_time = format_time(chunk['end_time'])
-        text = chunk['text']
-        
-        srt_content += f"{i+1}\n{start_time} --> {end_time}\n{text}\n\n"
-        print(f"processing {i} chunk")
-    
-    return srt_content
+    prev_time = 0
+    total_time = 0
 
+    def format_time(seconds):
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        seconds = int(seconds % 60)
+        milliseconds = int((seconds - int(seconds)) * 1000)
+        return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
+
+    for i, chunk in enumerate(chunks):
+        start_seconds = chunk['start_time']
+        end_seconds = chunk['end_time']
+
+        if prev_time >= end_seconds:
+            # total_time += prev_time
+            total_time += 15 # match the chunk length
+        prev_time = end_seconds
+
+        start_seconds += total_time
+        end_seconds += total_time
+
+        start_time = format_time(start_seconds)
+        end_time = format_time(end_seconds)
+        text = chunk['text']
+
+        srt_content += f"{i+1}\n{start_time} --> {end_time}\n{text}\n\n"
+
+    return srt_content
 
 def convert_to_mp3(file_path, output_path):
     """Convert a file to MP3 using FFmpeg."""
@@ -86,7 +95,7 @@ def transcribe_file(file_id):
         files = session.get('files', [])
         file_info = next((file for file in files if file['id'] == file_id), None)
         if not file_info:
-            return f"File not found in session.", 404
+            return "File not found in session.", 404
 
         original_filename = file_info['name']
         file_extension = os.path.splitext(original_filename)[1]
@@ -109,20 +118,13 @@ def transcribe_file(file_id):
         # Process the audio with the pipeline
         result = pipe({"array": waveform, "sampling_rate": sample_rate})
 
-        # Debug: Print the full result from the pipeline
-        print("Pipeline Result:", result)
-
         # Extract text and timestamps
         transcription_text = result.get("text", "")
-        chunks = result.get("chunks", [])  # Use "chunks" instead of "segments"
-
-        # Debug: Print segments to check their content
-        print("Chunks:", chunks)
+        chunks = result.get("chunks", [])
 
         # Prepare segment data
         formatted_chunks = []
         for chunk in chunks:
-            print(chunk)
             start_time = chunk.get("timestamp", (0, 0))[0]  # Start time of the segment in seconds
             end_time = chunk.get("timestamp", (0, 0))[1]    # End time of the segment in seconds
             text = chunk.get("text", "")                    # Transcribed text for the segment
@@ -133,28 +135,23 @@ def transcribe_file(file_id):
                 "text": text
             })
 
-
         # Generate SRT content
         srt_content = generate_srt(formatted_chunks)
 
-        # Debug: Print SRT content to check its format
-        print("SRT Content:", srt_content)
-
-        # Save the SRT file
-        srt_filename = f"{file_id}.srt"
-        srt_filepath = os.path.join("/Users/danielzhao/Documents/Github/fluentsubs/flask-server/srt_files", srt_filename)
-        with open(srt_filepath, "w") as srt_file:
+        # Save the SRT file to the specified directory
+        srt_directory = '/Users/danielzhao/Documents/Github/fluentsubs/flask-server/srt_files'
+        os.makedirs(srt_directory, exist_ok=True)
+        srt_file_path = os.path.join(srt_directory, f"{file_id}.srt")
+        with open(srt_file_path, 'w', encoding='utf-8') as srt_file:
             srt_file.write(srt_content)
 
-        # Store the transcription with timestamps in the session
+        # Save the transcription in the session
         transcriptions = session.get('transcriptions', {})
-        transcriptions[file_id] = {
-            "text": transcription_text,
-            "segments": formatted_chunks
-        }
+        transcriptions[file_id] = transcription_text
         session['transcriptions'] = transcriptions
 
-        return jsonify({"transcription": transcription_text, "srt_file": srt_filename})
+        # Return success response
+        return {"status_code": 200, "srt_file_path": srt_file_path}
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return {"status_code": 500}

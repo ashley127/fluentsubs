@@ -1,4 +1,4 @@
-from flask import Blueprint, session, redirect, url_for
+from flask import Blueprint, session, jsonify
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 import logging
@@ -6,14 +6,14 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.DEBUG)
 
-scan_blueprint = Blueprint('scan_folder', __name__)
+scan_folder_bp = Blueprint('scan_folder', __name__)
 
 FOLDER_ID = '1kfVpNTAvegKgiB2YyOTc0CGtMruywiuV'
 
-@scan_blueprint.route('/scan-folder')
+@scan_folder_bp.route('/scan-folder', methods=['GET'])
 def scan_folder():
     if 'credentials' not in session:
-        return redirect(url_for('auth.login'))  # Ensure the redirect is returned
+        return jsonify({"error": "User not authenticated"}), 401  # Return a JSON error response
 
     credentials = Credentials(**session['credentials'])
     drive_service = build('drive', 'v3', credentials=credentials)
@@ -39,7 +39,7 @@ def scan_folder():
         # Log the number of files found
         logging.debug(f"Number of files found: {len(files)}")
 
-        # Prepare a list of files to display
+        # Prepare a list of files to return
         file_list = [{'id': file['id'], 'name': file['name'], 'mimeType': file['mimeType']} for file in files]
 
         # Log each file found
@@ -50,9 +50,9 @@ def scan_folder():
         session['folder_name'] = folder_name
         session['files'] = file_list
 
-        # Redirect to home page after scanning
-        return redirect(url_for('home'))
+        # Return the list of files as JSON
+        return {"folder_name": folder_name, "files": file_list}
     
     except Exception as e:
         logging.error(f"An error occurred: {e}")
-        return f"An error occurred: {e}", 500
+        return jsonify({"error": str(e)}), 500

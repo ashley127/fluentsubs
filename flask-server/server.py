@@ -14,8 +14,8 @@ app.secret_key = os.getenv('GOOGLE_CLIENT_SECRET')
 from routes.authenticate import auth_bp
 app.register_blueprint(auth_bp)
 
-from routes.scan_folder import scan_blueprint
-app.register_blueprint(scan_blueprint)
+from routes.scan_folder import scan_folder_bp
+app.register_blueprint(scan_folder_bp)
 
 from routes.download_all import download_all_bp
 app.register_blueprint(download_all_bp)
@@ -25,6 +25,9 @@ app.register_blueprint(transcribe_bp)
 
 from routes.subtitle import subtitle_bp
 app.register_blueprint(subtitle_bp)
+
+from routes.process_video import process_video_bp
+app.register_blueprint(process_video_bp)
 
 @app.route('/')
 def home():
@@ -38,8 +41,8 @@ def home():
         # Define a simple HTML template directly in the route
         html_content = f'''
             <h1>Welcome, {session['google_name']}</h1>
-            <p><a href="/scan-folder"><button>Scan Google Drive Files</button></a></p>
-            <p><a href="/logout"><button>Logout</button></a></p>
+            <p><a href="{url_for('scan_folder.scan_folder')}"><button>Scan Google Drive Files</button></a></p>
+            <p><a href="{url_for('auth.logout')}"><button>Logout</button></a></p>
             
             <h2>Scanned Folder</h2>
             <p>Folder Name: {folder_name}</p>
@@ -48,17 +51,29 @@ def home():
                     <li>
                         {file["name"]} (ID: {file["id"]}, Type: {file["mimeType"]})
                         <p>
-                            <a href="/download-file/{file["id"]}"><button>Download</button></a>
-                            <form action="/transcribe-file/{file["id"]}" method="post" style="display:inline;" onsubmit="showSpinner(this);">
+                            <a href="{url_for('download_all.download_file', file_id=file['id'])}"><button>Download</button></a>
+                            <form action="{url_for('transcribe.transcribe_file', file_id=file['id'])}" method="post" style="display:inline;" onsubmit="showSpinner(this);">
                                 <button type="submit">Transcribe</button>
                                 <span class="spinner" style="display:none;">⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏</span>
                             </form>
+                            {f'''
+                                <form action="{url_for('subtitle.create_video', file_id=file['id'])}" method="post" style="display:inline;" onsubmit="showSpinner(this);">
+                                    <button type="submit">Add Subtitles</button>
+                                    <span class="spinner" style="display:none;">⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏</span>
+                                </form>
+                                <a href="{url_for('process_video.download_video', file_id=file['id'])}"><button>Download Final Video</button></a>
+                            ''' if file["id"] in transcriptions else ''}
                         </p>
                         <p>{transcriptions.get(file["id"], "No transcription available")}</p>
                     </li>''' for file in files)}
             </ul>
 
-            <p><a href="/download-all"><button>Download All Files</button></a></p>
+            <p><a href="{url_for('download_all.download_all')}"><button>Download All Files</button></a></p>
+
+            <p><form action="{url_for('process_video.process_video')}" method="post" onsubmit="showSpinner(this);">
+                <button type="submit">Process All Files</button>
+                <span class="spinner" style="display:none;">⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏</span>
+            </form></p>
 
             <script>
                 function showSpinner(form) {{
@@ -76,8 +91,9 @@ def home():
 
         return render_template_string(html_content)
     else:
-        # If not authenticated, prompt to log in
-        return 'Welcome to the Home Page! <a href="/login">Login with Google</a>'
+        return f'Welcome to the Home Page! <a href="{url_for('auth.login')}">Login with Google</a>'
+
+
 
 if __name__ == '__main__':
     app.run(debug=True)
