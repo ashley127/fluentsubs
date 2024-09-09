@@ -1,76 +1,70 @@
-from flask import Blueprint, jsonify, session, send_file, request
+from flask import Blueprint, request, jsonify, session
+from googleapiclient.discovery import build
+from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 import os
-from routes.scan_folder import scan_folder
-from routes.download_all import download_file
-from routes.transcribe import transcribe_file
-from routes.subtitle import create_video
 
 process_video_bp = Blueprint('process_video', __name__)
 
-scanned_files = set()
+SERVICE_ACCOUNT_FILE = 'fluent-subs-9ada8cd5d073.json'
+
+def get_drive_service():
+    credentials = ServiceAccountCredentials.from_service_account_file(
+        SERVICE_ACCOUNT_FILE,
+        scopes=['https://www.googleapis.com/auth/drive']
+    )
+    return build('drive', 'v3', credentials=credentials)
 
 @process_video_bp.route('/process-video', methods=['POST'])
 def process_video():
+    global request
+    print("Processing video...")
+
     try:
-        print("starting process")
-
-        result = scan_folder()
-        print("scanning results: ", result)
+        # Check the content type and log it
+        print(request)
+        print(f"Content-Type: {request.content_type}")
         
-        if 'error' in result:
-            return jsonify({"error": "Failed to scan folder"}), 500
+        # Attempt to get JSON data from the request
+        data = request.json
+        if data is None:
+            print("No JSON data found in the request.")
+            return jsonify({"error": "No JSON data found in the request."}), 400
         
-        print("no error in scanning")
+        print(f"Request JSON: {data}")
+        
+        file_ids = data.get('file_ids', [])
+        if not file_ids:
+            print("No file IDs provided.")
+            return jsonify({"error": "No file IDs provided."}), 400
+        
+        print(f"Processing file IDs: {file_ids}")
 
-        new_files = result['files']
+        # Debug print to check the session data
+        files_in_session = session.get('files', [])
+        print(f"Files in session: {files_in_session}")
 
-        print("new files found", new_files)
-        for file_info in new_files:
-
-            print("processing file:", file_info)
-
-            file_id = file_info['id']
-
-            if file_id in scanned_files:
-                continue
-
-            scanned_files.add(file_id)
-
-            print("attempting download")
-            download_response = download_file(file_id)
-            if download_response["status_code"] != 200:
-                return jsonify({"error": f"Failed to download file {file_id}"}), 500
-
-            print("attempting to transcribe file")
-            transcribe_response = transcribe_file(file_id)
-            if transcribe_response["status_code"] != 200:
-                return jsonify({"error": f"Transcription failed for file {file_id}"}), 500
-
-            print("attempting to create final video")
-            subtitle_response = create_video(file_id)
-            if subtitle_response["status_code"] != 200:
-                return jsonify({"error": f"Subtitle creation failed for file {file_id}"}), 500
-
-            print("attempting to serve final video")
-            final_video_path = f'/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads/{file_id}_with_subtitles.mp4'
-            if not os.path.exists(final_video_path):
-                return jsonify({"error": f"Final video file not found for {file_id}"}), 404
+        for file_id in file_ids:
+            file_info = next((file for file in files_in_session if file['id'] == file_id), None)
             
-            return send_file(final_video_path, as_attachment=True)
+            if not file_info:
+                print(f"File with ID {file_id} not found in session.")
+                continue
+            
+            drive_service = get_drive_service()
+            request = drive_service.files().get_media(fileId=file_id)
+            file_content = request.execute()
 
-        return jsonify({"message": "Processing complete, but no new files were found."}), 200
+            file_name = file_info['name']
+            file_ext = file_name.split(".")[-1] if "." in file_name else "bin"
+            file_path = os.path.join("/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads", f"{file_id}.{file_ext}")
+
+            with open(file_path, 'wb') as file:
+                file.write(file_content)
+
+            print(f"File {file_id} saved to {file_path}")
+
+        return jsonify({"message": "Files processed successfully", "status_code": 200})
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@process_video_bp.route('/download-video/<file_id>', methods=['GET'])
-def download_video(file_id):
-    try:
-        final_video_path = f'/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads/{file_id}_with_subtitles.mp4'
-        if not os.path.exists(final_video_path):
-            return jsonify({"error": "Final video file not found."}), 404
-
-        return send_file(final_video_path, as_attachment=True)
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Error while processing video: {e}")
+        return jsonify({"error": f"Error while processing video: {e}"}), 500

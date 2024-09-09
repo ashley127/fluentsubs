@@ -25,3 +25,8 @@ client/yarn-error.log*
 .env
 .venv
 flask-server/client_secret.json
+flask-server/fluent-subs-9ada8cd5d073.json
+client_secret_340062128594-cbt7o15kutr46fonepsmi7cku8lcel9r.apps.googleusercontent.com.json
+flask-server/file_downloads/*
+flask-server/file_output_downloads/*
+flask-server/srt_files/*

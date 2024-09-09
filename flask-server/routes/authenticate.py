@@ -1,95 +1,49 @@
-from flask import Blueprint, redirect, url_for, session, request
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from google_auth_oauthlib.flow import Flow
+from flask import Blueprint, session, redirect, url_for, flash
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
 import os
-import json
-
-# Load environment variables from .env file
-from dotenv import load_dotenv
-load_dotenv()
 
 auth_bp = Blueprint('auth', __name__)
 
-SCOPES = ["https://www.googleapis.com/auth/drive",
-          "https://www.googleapis.com/auth/userinfo.profile",
-          "https://www.googleapis.com/auth/userinfo.email",
-          "openid"]
+# Path to your service account JSON key file
+SERVICE_ACCOUNT_FILE = os.path.join(os.path.dirname(__file__), '../fluent-subs-9ada8cd5d073.json')
 
-# Use HTTP in development for debugging, HTTPS otherwise
-REDIRECT_URI = os.getenv('REDIRECT_URI', "http://127.0.0.1:5000/oauth2callback")
-
-# Load credentials from the JSON file
-credentials_path = os.path.join(os.path.dirname(__file__), '../client_secret.json')
-print(credentials_path)
-with open(credentials_path) as f:
-    credentials_data = json.load(f)
-
-flow = Flow.from_client_config(
-    credentials_data,
-    scopes=SCOPES,
-    redirect_uri=REDIRECT_URI
-)
-
-# Enable insecure OAuth for debugging purposes
-if REDIRECT_URI.startswith("http://"):
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-
-@auth_bp.route("/login")
+@auth_bp.route('/login')
 def login():
-    authorization_url, state = flow.authorization_url(access_type='offline')
-    session["state"] = state
-    return redirect(authorization_url)
-@auth_bp.route("/oauth2callback")
-def oauth2callback():
     try:
-        flow.fetch_token(authorization_response=request.url)
+        # Authenticate using the service account
+        credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=['https://www.googleapis.com/auth/drive'])
 
-        # Check and log state values
-        if "state" not in session or session["state"] != request.args.get("state"):
-            return "State does not match!", 500
+        print("alive")
 
-        credentials = flow.credentials
+        # Create a Google Drive API service
+        drive_service = build('drive', 'v3', credentials=credentials)
 
-        # Log credentials and id_token
-        if not credentials:
-            return "No credentials obtained.", 500
-        if not credentials.id_token:
-            return "No ID token obtained.", 500
+        # Store the credentials and some user information in the session
+        session['credentials'] = credentials_to_dict(credentials)
+        session['google_email'] = credentials.service_account_email  # Store the service account email
+        session['google_name'] = 'Service Account'  # Just for display purposes
 
-        request_session = google_requests.Request()
-
-        id_info = id_token.verify_oauth2_token(
-            credentials.id_token, request_session, credentials_data['web']['client_id']
-        )
-
-        # Log ID info
-        if not id_info:
-            return "ID token verification failed.", 500
-
-        # Store user information in session
-        session["google_id"] = id_info.get("sub")
-        session["google_name"] = id_info.get("name")
-        session["google_email"] = id_info.get("email")
-
-        # Store credentials in session
-        session['credentials'] = {
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes
-        }
-
-        return redirect(url_for("home"))
+        return redirect(url_for('home'))
     except Exception as e:
-        # Log the exception details
-        return f"An error occurred during the callback: {e}", 500
+        print(e)
+        
+        print("dead")
+        flash(f"Error during login: {e}")
+        return redirect(url_for('home'))
 
-
-
-@auth_bp.route("/logout")
+@auth_bp.route('/logout')
 def logout():
+    # Clear the session, effectively logging out the user
     session.clear()
-    return redirect(url_for("home"))
+    return redirect(url_for('home'))
+
+def credentials_to_dict(credentials):
+    """
+    Converts the service account Credentials object to a dictionary format to store in session.
+    """
+    return {
+        'token': credentials.token,
+        'scopes': credentials.scopes,
+        'service_account_email': credentials.service_account_email,
+    }
