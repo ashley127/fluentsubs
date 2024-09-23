@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify, session, redirect, url_for, send_file
+from flask import Blueprint, jsonify
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 import os
@@ -14,29 +14,19 @@ def get_drive_service():
         scopes=['https://www.googleapis.com/auth/drive']
     )
     return build('drive', 'v3', credentials=credentials)
+
 @download_all_bp.route('/download-file/<file_id>')
 def download_file(file_id):
+    print("Attempting to download for processing...")
     try:
         drive_service = get_drive_service()
 
-        # Retrieve files from the session and print their IDs
-        files = session.get('files', [])
-        file_ids = [file['id'] for file in files]  # Extract file IDs from the session
-        print(f"File IDs in session: {file_ids}")  # Print the file IDs for debugging
-
-        # Find the specific file by file_id
-        file_info = next((file for file in files if file['id'] == file_id), None)
-        if not file_info:
-            print(f"File with ID {file_id} not found in session.")  # Additional debug statement
-            return {"error": "File not found in session.", "status_code": 404}
-
-        # Download the file from Google Drive
+        # Directly download the file from Google Drive without using session
         request = drive_service.files().get_media(fileId=file_id)
         file_content = request.execute()
 
         # Determine file extension and create a file path
-        file_name = file_info['name']
-        file_ext = file_name.split(".")[-1] if "." in file_name else "bin"
+        file_ext = "mp4"  # Assuming it's an mp4 file for this example
         file_path = os.path.join("/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads", f"{file_id}.{file_ext}")
 
         # Save the file to the local file system
@@ -48,4 +38,4 @@ def download_file(file_id):
 
     except Exception as e:
         print(f"Failed to download file {file_id}: {e}")
-        return jsonify({"error": f"Failed to download file: {e}"}), 500
+        return {"error": f"Failed to download file: {e}", "status_code": 500}

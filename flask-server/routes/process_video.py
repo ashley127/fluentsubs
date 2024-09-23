@@ -1,7 +1,11 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify
 from googleapiclient.discovery import build
 from google.oauth2.service_account import Credentials as ServiceAccountCredentials
 import os
+
+from routes.download_all import download_file
+from routes.transcribe import transcribe_file
+from routes.subtitle import create_video
 
 process_video_bp = Blueprint('process_video', __name__)
 
@@ -16,7 +20,6 @@ def get_drive_service():
 
 @process_video_bp.route('/process-video', methods=['POST'])
 def process_video():
-    global request
     print("Processing video...")
 
     try:
@@ -37,31 +40,33 @@ def process_video():
             print("No file IDs provided.")
             return jsonify({"error": "No file IDs provided."}), 400
         
-        print(f"Processing file IDs: {file_ids}")
-
-        # Debug print to check the session data
-        files_in_session = session.get('files', [])
-        print(f"Files in session: {files_in_session}")
+        print(f"Processing file IDs (from request): {file_ids}")
 
         for file_id in file_ids:
-            file_info = next((file for file in files_in_session if file['id'] == file_id), None)
-            
-            if not file_info:
-                print(f"File with ID {file_id} not found in session.")
-                continue
-            
-            drive_service = get_drive_service()
-            request = drive_service.files().get_media(fileId=file_id)
-            file_content = request.execute()
+            try:
+                print(f"processing file: {file_id}")
 
-            file_name = file_info['name']
-            file_ext = file_name.split(".")[-1] if "." in file_name else "bin"
-            file_path = os.path.join("/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads", f"{file_id}.{file_ext}")
+                print(f"attempting to download file: {file_id}")
+                download_response = download_file(file_id)
+                if download_response["status_code"] != 200:
+                    print(f'download failed: {download_response}')
+                    return jsonify({"error": f"Failed to download file {file_id}, due to {download_response}"}), 500
 
-            with open(file_path, 'wb') as file:
-                file.write(file_content)
+                print(f"attempting to transcribe file: {file_id}")
+                transcribe_response = transcribe_file(file_id)
+                if transcribe_response["status_code"] != 200:
+                    print(f'transcribe failed: {transcribe_response}')
+                    return jsonify({"error": f"Failed to transcribe file {file_id}, due to {transcribe_response}"}), 500
+                
+                print(f"attempting to add subtitles and create final video: {file_id}")
+                subtitle_response = create_video(file_id)
+                if subtitle_response["status_code"] != 200:
+                    print(f'subtitle failed: {subtitle_response}')
+                    return jsonify({"error": f"Failed to subtitle file {file_id}, due to {subtitle_response}"}), 500
 
-            print(f"File {file_id} saved to {file_path}")
+            except Exception as e:
+                print(f"Error while processing file {file_id}: {e}")
+                return jsonify({"error": f"Error processing file {file_id}: {e}"}), 500
 
         return jsonify({"message": "Files processed successfully", "status_code": 200})
 

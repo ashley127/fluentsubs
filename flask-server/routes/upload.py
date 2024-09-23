@@ -1,9 +1,8 @@
-from flask import request, jsonify, Blueprint, session
+from flask import request, jsonify, Blueprint
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 from googleapiclient.http import MediaFileUpload
 import os
-from flask_session import Session
 
 upload_bp = Blueprint('upload', __name__)
 
@@ -18,7 +17,6 @@ drive_service = build('drive', 'v3', credentials=credentials)
 @upload_bp.route('/upload', methods=['POST'])
 def upload_file():
     print("Upload starting...")
-
     try:
         if 'file' not in request.files:
             return jsonify({"error": "No file part in the request"}), 400
@@ -45,14 +43,6 @@ def upload_file():
 
         os.remove(temp_file_path)
         print(f"Temporary file removed: {temp_file_path}")
-
-        # Store file information in session
-        files = session.get('files', [])
-        files.append({
-            'id': drive_file.get('id'),
-            'name': file.filename
-        })
-        session['files'] = files
 
         return jsonify({"message": "File uploaded successfully", "file_id": drive_file.get('id')})
 

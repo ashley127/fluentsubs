@@ -42,7 +42,7 @@ function Upload() {
         }
     
         try {
-            const response = await axios.post('http://127.0.0.1:5000/process-video', { file_ids: fileIds });
+            const response = await axios.post('http://127.0.0.1:5000/process-video', { file_ids: fileIds , withCredentials: true });
             console.log('Processing response:', response.data);
         } catch (error) {
             console.error('Error processing video:', error);

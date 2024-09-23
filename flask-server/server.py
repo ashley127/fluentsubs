@@ -1,5 +1,4 @@
 from flask import Flask, session, url_for, redirect, render_template_string, request
-from flask_session import Session
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
@@ -9,16 +8,10 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
 app.config['CORS_HEADERS'] = 'Content-Type'
-app.config['SESSION_TYPE'] = 'filesystem'
-app.config['SESSION_PERMANENT'] = False
-app.config['SESSION_USE_SIGNER'] = True
-app.config['SESSION_KEY_PREFIX'] = 'session:'
 
 app.secret_key = os.getenv('GOOGLE_CLIENT_SECRET')
-
-Session(app)
-
 # Register blueprints
 from routes.authenticate import auth_bp
 app.register_blueprint(auth_bp)

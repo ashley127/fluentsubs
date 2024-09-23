@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify
 import torch
 import os
 import subprocess
@@ -34,7 +34,7 @@ pipe = pipeline(
 )
 
 def generate_srt(chunks):
-    """Generate SRT content from segments."""
+    print("generating SRT file...")
     srt_content = ""
     prev_time = 0
     total_time = 0
@@ -51,8 +51,7 @@ def generate_srt(chunks):
         end_seconds = chunk['end_time']
 
         if prev_time >= end_seconds:
-            # total_time += prev_time
-            total_time += 15 # match the chunk length
+            total_time += 15  # match the chunk length
         prev_time = end_seconds
 
         start_seconds += total_time
@@ -91,40 +90,48 @@ def convert_to_mono(input_file, output_file):
 @transcribe_bp.route('/transcribe-file/<file_id>', methods=['POST'])
 def transcribe_file(file_id):
     try:
-        # Find the correct file extension
-        files = session.get('files', [])
-        file_info = next((file for file in files if file['id'] == file_id), None)
-        if not file_info:
-            return "File not found in session.", 404
-
-        original_filename = file_info['name']
-        file_extension = os.path.splitext(original_filename)[1]
-        file_path = f'/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads/{file_id}{file_extension}'
+        # Look for the file in the file_downloads directory
+        file_downloads_dir = '/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads'
+        matching_files = [f for f in os.listdir(file_downloads_dir) if f.startswith(file_id)]
+        if not matching_files:
+            return jsonify({"error": "File not found in file_downloads directory.", "status_code": 500})
+        
+        # Use the first matching file (since file_id should be unique)
+        file_name = matching_files[0]
+        file_extension = os.path.splitext(file_name)[1]
+        file_path = os.path.join(file_downloads_dir, file_name)
 
         # Determine if the file is already an MP3
         if file_extension.lower() != '.mp3':
-            audio_path = f'/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads/{file_id}.mp3'
+            audio_path = os.path.join(file_downloads_dir, f"{file_id}.mp3")
             convert_to_mp3(file_path, audio_path)
         else:
             audio_path = file_path
 
         # Convert audio to mono
-        mono_audio_path = f'/Users/danielzhao/Documents/Github/fluentsubs/flask-server/file_downloads/{file_id}_mono.wav'
+        print("convert audio to mono")
+        mono_audio_path = os.path.join(file_downloads_dir, f"{file_id}_mono.wav")
         convert_to_mono(audio_path, mono_audio_path)
 
         # Load the audio file
+        print("load audio file")
         waveform, sample_rate = sf.read(mono_audio_path)
 
         # Process the audio with the pipeline
+        print("whisper the file")
         result = pipe({"array": waveform, "sampling_rate": sample_rate})
 
         # Extract text and timestamps
+        print("get text and timestamps")
+        print(f"looking at result {result}")
         transcription_text = result.get("text", "")
         chunks = result.get("chunks", [])
 
         # Prepare segment data
+        print("formatting chunks")
         formatted_chunks = []
         for chunk in chunks:
+            print(f"working on chunk: {chunk}")
             start_time = chunk.get("timestamp", (0, 0))[0]  # Start time of the segment in seconds
             end_time = chunk.get("timestamp", (0, 0))[1]    # End time of the segment in seconds
             text = chunk.get("text", "")                    # Transcribed text for the segment
@@ -145,13 +152,8 @@ def transcribe_file(file_id):
         with open(srt_file_path, 'w', encoding='utf-8') as srt_file:
             srt_file.write(srt_content)
 
-        # Save the transcription in the session
-        transcriptions = session.get('transcriptions', {})
-        transcriptions[file_id] = transcription_text
-        session['transcriptions'] = transcriptions
-
         # Return success response
         return {"status_code": 200, "srt_file_path": srt_file_path}
 
     except Exception as e:
-        return {"status_code": 500}
+        return {"error": str(e), "status_code": 500}
